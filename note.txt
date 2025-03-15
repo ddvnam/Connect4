@@ -1,0 +1,14 @@
+Minimax flow:
+- if the node is the terminal node ( tie, win, or loose or sth):
+    return Evaluate(node), None
+
+- if the current maxize is True:
+ + get the max(current_score, minimax(max_player = false))
+
+- if the current maxize is false
++ get the min(current_score, minimax(max_player = True))
+
+Evaluate:
++ 1000 for AI winning move (4 in a row)
++ -100 if AI losing game
++
