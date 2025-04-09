@@ -8,8 +8,7 @@ class Board:
         self.col_heights = [(height + 1) * i for i in range(width)]
         self.moves = 0
         self.history = []
-        self.bit_shifts = self.__get_bit_shifts()
-        self.base_search_order = self.__get_base_search_order()
+        self.bit_shifts = self.get_bit_shifts()
 
     def __repr__(self):
         state = []
@@ -24,7 +23,7 @@ class Board:
                 else:
                     row_str += '. '
             state.append(row_str)
-        state.reverse()         # inverted orientation more readable
+        state.reverse()         
         return '\n'.join(state)
 
     def get_current_player(self):
@@ -35,10 +34,10 @@ class Board:
         ''' returns opponent to current player: 0 or 1 '''
         return (self.moves + 1) & 1
 
-    def get_search_order(self):
-        ''' returns column search order containing playable columns only '''
-        col_order = filter(self.can_play, self.base_search_order)
-        return sorted(col_order, key=self.__col_sort, reverse=True)
+    def get_available_moves(self):
+        available_moves = [col for col in range(self.w) if self.can_play(col)]
+        # Sort by: 1) Center priority, 2) Column height (higher = better)
+        return sorted(available_moves, key=lambda x: (abs(x - self.w // 2), -self.col_heights[x]))
 
     def get_mask(self):
         ''' returns bitstring of all occupied positions '''
@@ -80,29 +79,11 @@ class Board:
         ''' returns score of complete game (evaluated for winning opponent) '''
         return - (self.w * self.h + 1 - self.moves) // 2
 
-    def __get_bit_shifts(self):
+    def get_bit_shifts(self):
         return [
             1,              # | vertical
             self.h,         # \ diagonal
             self.h + 1,     # - horizontal
             self.h + 2      # / diagonal
         ]
-
-    def __get_base_search_order(self):
-        base_search_order = list(range(self.w))
-        base_search_order.sort(key=lambda x: abs(self.w // 2 - x))
-        return base_search_order
-
-    def __col_sort(self, col):
-        player = self.get_current_player()
-        move = 1 << self.col_heights[col]
-        count = 0
-        state = self.board_state[player] | move
-
-        for shift in self.bit_shifts:
-            test = state & (state >> shift) & (state >> 2 * shift)
-            if test:
-                count += bin(test).count('1')
-
-        return count
 
