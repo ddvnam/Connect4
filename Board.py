@@ -1,3 +1,5 @@
+import copy
+
 class Board:
     ''' class to store and manipulate connect 4 game states '''
 
@@ -86,4 +88,7 @@ class Board:
             self.h + 1,     # - horizontal
             self.h + 2      # / diagonal
         ]
+    
+    
+
 
