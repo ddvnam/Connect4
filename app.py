@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 
-# from solver import Solver
+# import AI
+from solver import solver
+from Board import Board
 
 app = FastAPI()
 
@@ -30,9 +32,10 @@ async def make_move(game_state: GameState) -> AIResponse:
     try:
         if not game_state.valid_moves:
             raise ValueError("Không có nước đi hợp lệ")
-            
-        selected_move = 0 # change logic thuật toán AI của bạn ở đây
         
+        board_instance = Board().write_bitboard_from_list(game_state.board) 
+        solver_instance = solver(board_instance)
+        selected_move = solver_instance.solve(8, -float('inf'), float('inf'), True)[1]
         return AIResponse(move=selected_move)
     except Exception as e:
         if game_state.valid_moves:

@@ -12,6 +12,7 @@ class Board:
         self.history = []
         self.bit_shifts = self.get_bit_shifts()
 
+
     def __repr__(self):
         state = []
         for i in range(self.h):                         # row
@@ -89,6 +90,19 @@ class Board:
             self.h + 2      # / diagonal
         ]
     
-    
+    def write_bitboard_from_list(self, list_board):
+        """Converts a top-down 2D list to bitboard format (bottom-up)."""
+        self.board_state = [0, 0]
+        self.col_heights = [(self.h + 1) * i for i in range(self.w)]
+        self.moves = 0
+        self.history = []
 
+        for row in range(self.h):
+            for col in range(self.w):
+                cell = list_board[self.h - 1 - row][col]  # Flip the row index
+                if cell != 0:
+                    bit_pos = (self.h + 1) * col + row
+                    self.board_state[cell - 1] |= 1 << bit_pos
+                    self.col_heights[col] = max(self.col_heights[col], bit_pos + 1)
+                    self.moves += 1
 

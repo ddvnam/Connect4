@@ -4,67 +4,70 @@ import pygame
 
 pygame.init()
 
-class solver:
+class Solver:  # Changed to PascalCase for class naming convention
     def __init__(self, board: Board):
         self.board = board
         self.maximizer = board.get_current_player()
         self.minimizer = board.get_opponent()
         self.node_count = 0
+        self.pruning_count = 0
 
     def evaluate(self) -> int:
         if self.board.winning_board_state():
-            if self.board.get_opponent() == self.maximizer:
-                return 100000
-            else:
-                return -100000
+            return 1000000 if self.board.get_opponent() == self.maximizer else -1000000
 
         grid = self.bitboard_to_grid(self.board)
         return self.score_position(grid, self.maximizer)
 
     def causes_double_threat(self, col: int) -> bool:
         """Check if playing this column creates two immediate winning threats."""
+        if not self.board.can_play(col):
+            return False
+            
         self.board.play(col)
         threats = 0
         for next_col in self.board.get_available_moves():
-            self.board.play(next_col)
-            if self.board.winning_board_state():
-                threats += 1
-            self.board.backtrack()
+            if self.board.can_play(next_col):
+                self.board.play(next_col)
+                if self.board.winning_board_state():
+                    threats += 1
+                self.board.backtrack()
+                if threats >= 2:  # Early exit if we already found 2 threats
+                    break
         self.board.backtrack()
         return threats >= 2
 
     def apply_strategic_rules(self, is_maximizer) -> int:
+        current_player = self.maximizer if is_maximizer else self.minimizer
+        opponent = self.minimizer if is_maximizer else self.maximizer
+
         # Rule 1: Win immediately if possible
-        for col in range(self.board.w):
+        for col in self.board.get_available_moves():
             if self.board.can_play(col):
                 self.board.play(col)
-                if self.board.winning_board_state():
+                if self.board.winning_board_state() and self.board.get_current_player() == opponent:  # Check if we won
                     self.board.backtrack()
-                    print(f"[Strategic] Winning move found at col {col}")
                     return col
                 self.board.backtrack()
 
         # Rule 2: Block opponent's win
-        self.board.moves ^= 1  # Switch to opponent
-        for col in range(self.board.w):
+        # Temporarily switch to opponent's perspective
+        original_player = self.board.get_current_player()
+        self.board.moves ^= 1
+        for col in self.board.get_available_moves():
             if self.board.can_play(col):
                 self.board.play(col)
                 if self.board.winning_board_state():
                     self.board.backtrack()
-                    self.board.moves ^= 1
-                    print(f"[Strategic] Blocking opponent's win at col {col}")
+                    self.board.moves = original_player  # Restore original player
                     return col
                 self.board.backtrack()
-        self.board.moves ^= 1
+        self.board.moves = original_player  # Restore original player
 
         # Rule 3: Block opponent's double threats
-        self.board.moves ^= 1
-        for col in range(self.board.w):
+        for col in self.board.get_available_moves():
             if self.board.can_play(col) and self.causes_double_threat(col):
-                self.board.moves ^= 1
-                print(f"[Strategic] Blocking opponent's double threat at col {col}")
                 return col
-        self.board.moves ^= 1
 
         return None
 
@@ -74,155 +77,149 @@ class solver:
             for row in range(board.h):
                 pos = 1 << ((board.h + 1) * col + row)
                 if board.board_state[0] & pos:
-                    grid[row][col] = 1
+                    grid[row][col] = 1  # Quân của người chơi 1
                 elif board.board_state[1] & pos:
-                    grid[row][col] = 2
-        return grid
+                    grid[row][col] = 2  # Quân của người chơi 2
+        return grid[::-1]  # Đảo ngược hàng để hàng 0 là đáy bàn cờ
 
     def score_position(self, grid, player):
-        opponent = 2 if player == 1 else 1
+        player += 1
+        opponent = 3 - player  # Assuming players are 1 and 2
+
         score = 0
-
         def evaluate_window(window):
-            score = 0
-            # Đánh giá cho người chơi hiện tại
-            if window.count(player) == 4:
-                score += 10000
-            elif window.count(player) == 3 and window.count(0) == 1:
-                score += 80
-            elif window.count(player) == 2 and window.count(0) == 2:
-                score += 10
+            player_count = window.count(player)
+            opponent_count = window.count(opponent)
+            empty_count = window.count(0)
 
-            # Đánh giá cho đối thủ với hình phạt nặng hơn
-            if window.count(opponent) == 4:
-                score -= 10000
-            elif window.count(opponent) == 3 and window.count(0) == 1:
-                score -= 200  # Phạt nặng hơn cho nước 3 của đối thủ (trước đây là -120)
-            elif window.count(opponent) == 2 and window.count(0) == 2:
-                score -= 50   # Phạt nặng hơn khi empty = 2 (trước đây là -20)
-            return score
+            # Terminal cases (win/loss)
+            if player_count == 4:
+                return 100000
+            if opponent_count == 4:
+                return -100000
 
-        # Ưu tiên cột giữa
+            window_score = 0
+
+            # Player's opportunities
+            if player_count == 3 and empty_count == 1:
+                window_score += 100
+            elif player_count == 2 and empty_count == 2:
+                window_score += 10
+            elif player_count == 3 and empty_count == 2:
+                window_score += 50
+
+            # Opponent's threats
+            if opponent_count == 3 and empty_count == 1:
+                window_score -= 500
+            elif opponent_count == 2 and empty_count == 2:
+                window_score -= 20
+            elif opponent_count == 3 and empty_count == 2:
+                window_score -= 300
+
+            return window_score
+
+        # Center column priority
         center_col = len(grid[0]) // 2
-        center_count = sum([1 for r in range(len(grid)) if grid[r][center_col] == player])
-        score += center_count * 6
+        center_count = sum(1 for r in range(len(grid)) if grid[r][center_col] == player)
+        score += center_count * 3
 
-        # Duyệt qua các cửa sổ 4 ô trên lưới
+        # Window evaluation
         rows, cols = len(grid), len(grid[0])
-        # Hàng ngang
+        
+        # Horizontal
         for r in range(rows):
             for c in range(cols - 3):
-                window = [grid[r][c + i] for i in range(4)]
+                window = (grid[r][c], grid[r][c+1], grid[r][c+2], grid[r][c+3])
                 score += evaluate_window(window)
-        # Cột dọc
-        for r in range(rows - 3):
-            for c in range(cols):
-                window = [grid[r + i][c] for i in range(4)]
+        
+        # Vertical
+        for c in range(cols):
+            for r in range(rows - 3):
+                window = (grid[r][c], grid[r+1][c], grid[r+2][c], grid[r+3][c])
                 score += evaluate_window(window)
-        # Đường chéo chính (/)
+        
+        # Diagonal (positive slope)
         for r in range(rows - 3):
             for c in range(cols - 3):
-                window = [grid[r + i][c + i] for i in range(4)]
+                window = (grid[r][c], grid[r+1][c+1], grid[r+2][c+2], grid[r+3][c+3])
                 score += evaluate_window(window)
-        # Đường chéo phụ (\)
+        
+        # Diagonal (negative slope)
         for r in range(3, rows):
             for c in range(cols - 3):
-                window = [grid[r - i][c + i] for i in range(4)]
+                window = (grid[r][c], grid[r-1][c+1], grid[r-2][c+2], grid[r-3][c+3])
                 score += evaluate_window(window)
 
         return score
 
-    def solve(self, depth: int, alpha: int, beta: int, is_maximizer) -> tuple:
-        self.node_count += 1
+    def solve(self, depth: int, alpha: int, beta: int, is_maximizer: bool) -> tuple:
+        # Kiểm tra terminal node trước khi đếm node
         if depth == 0 or self.board.winning_board_state() or self.board.is_full():
             return self.evaluate(), None
 
+        self.node_count += 1  # Chỉ đếm node khi thực sự duyệt
+
         strategic_col = self.apply_strategic_rules(is_maximizer)
-        if strategic_col is not None:
+        if strategic_col is not None and self.board.can_play(strategic_col):
             self.board.play(strategic_col)
             score = self.evaluate()
             self.board.backtrack()
             return score, strategic_col
 
-        if is_maximizer:
-            eval = -inf
-            best_col = None
-            for col in self.board.get_available_moves():
-                self.board.play(col)
-                score, _ = self.solve(depth - 1, alpha, beta, False)
-                self.board.backtrack()
+        best_col = None
+        eval_score = -inf if is_maximizer else inf
 
-                if score > eval:
-                    eval = score
+        for col in self.board.get_available_moves():
+            if not self.board.can_play(col):
+                continue
+
+            self.board.play(col)
+            current_score, _ = self.solve(depth - 1, alpha, beta, not is_maximizer)
+            self.board.backtrack()
+
+            if is_maximizer:
+                if current_score > eval_score:
+                    eval_score = current_score
                     best_col = col
-
-                alpha = max(alpha, eval)
-                if beta <= alpha:
-                    break
-        else:
-            eval = inf
-            best_col = None
-            for col in self.board.get_available_moves():
-                self.board.play(col)
-                score, _ = self.solve(depth - 1, alpha, beta, True)
-                self.board.backtrack()
-
-                if score < eval:
-                    eval = score
+                alpha = max(alpha, eval_score)
+            else:
+                if current_score < eval_score:
+                    eval_score = current_score
                     best_col = col
+                beta = min(beta, eval_score)
 
-                beta = min(beta, eval)
-                if beta <= alpha:
-                    break
-        return eval, best_col
+            if beta <= alpha:
+                if hasattr(self, 'pruning_count'):
+                    self.pruning_count += 1  # Chỉ tăng khi cắt tỉa
+                print(f"Pruning at depth {depth} for column {col} with alpha {alpha} and beta {beta} | Node count: {self.node_count}")
+            
+                break
 
-
+        return eval_score, best_col
+    
 def test():
     board = Board()
-    solver_instance = solver(board)
-    depth = 5
+    solver_instance = Solver(board)  # Changed to match class name
+    depth = 8
     alpha = -inf
     beta = inf
     is_maximizer = True
 
     while True:
-        user_input = input("Enter column to play (0-6): ")
-        if not user_input.isdigit():
-            print("Invalid input. Please enter a number between 0 and 6.")
-            continue
-
-        col = int(user_input)
-        if col < 0 or col >= board.w:
-            print("Invalid column. Please enter a number between 0 and 6.")
-            continue
-
-        if board.can_play(col):
-            board.play(col)
-            print(f"Played column {col}")
-        else:
-            print(f"Column {col} is not playable.")
-            continue
-
-        print('Current board state:')
-        print(board)
-
-        if board.winning_board_state():
-            print("You win!")
-            break
-
-        if board.is_full():
-            print("It's a draw!")
-            break
-
         print("AI is thinking...")
         solver_instance.node_count = 0
+        start = pygame.time.get_ticks()
         _, best_col = solver_instance.solve(depth, alpha, beta, is_maximizer)
         print(f"Node count: {solver_instance.node_count}")
+        print(f'Time taken: {pygame.time.get_ticks() - start} ms')
         print("-----------------------------------")
 
-        if best_col is not None:
+        if best_col is not None and board.can_play(best_col):
             board.play(best_col)
             print(f"AI played column {best_col}")
+        else:
+            print("No valid move found!")
+            break
 
         if board.winning_board_state():
             print("AI wins!")
@@ -235,6 +232,36 @@ def test():
 
         print('Current board state:')
         print(board)
+
+        while True:
+            user_input = input("Enter column to play (0-6): ")
+            if not user_input.isdigit():
+                print("Invalid input. Please enter a number between 0 and 6.")
+                continue
+
+            col = int(user_input)
+            if col < 0 or col >= board.w:
+                print("Invalid column. Please enter a number between 0 and 6.")
+                continue
+
+            if board.can_play(col):
+                board.play(col)
+                print(f"Played column {col}")
+                break
+            else:
+                print(f"Column {col} is not playable.")
+                continue
+
+        print('Current board state:')
+        print(board)
+
+        if board.winning_board_state():
+            print("You win!")
+            break
+
+        if board.is_full():
+            print("It's a draw!")
+            break
 
 if __name__ == "__main__":
     test()
