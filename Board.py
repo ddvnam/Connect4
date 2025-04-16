@@ -45,15 +45,6 @@ class Board:
         ''' returns bitstring of all occupied positions '''
         return self.board_state[0] | self.board_state[1]
 
-    # def get_key(self):
-    #     ''' returns unique game state identifier '''
-    #     return self.get_mask() + self.board_state[self.get_current_player()]
-
-    def get_key(self):
-        """Tạo key 56-bit cho TranspositionTable dựa trên trạng thái bàn cờ và lượt chơi."""
-        key = ((self.board_state[0] << 1) | self.board_state[1]) & ((1 << 56) - 1)
-        return key
-
     def can_play(self, col):
         ''' returns true if col (zero indexed) is playable '''
         return not self.get_mask() & 1 << (self.h + 1) * col + (self.h - 1)
@@ -116,6 +107,17 @@ class Board:
     def is_full(self):
         return self.moves == self.w*self.h
     
-        """Tạo key 56-bit cho TranspositionTable dựa trên trạng thái bàn cờ."""
-        key = (self.board_state[0] ^ self.board_state[1]) & ((1 << 56) - 1)
-        return key
+    def set_board(self, histories):
+        self.board_state = [0, 0]
+        self.col_heights = [(self.h + 1) * i for i in range(self.w)]
+        self.moves = 0
+        self.history = []
+        
+        for move in histories:
+            self.play(move)
+            self.history.append(move)
+            self.moves += 1
+            self.col_heights[move] += 1
+
+
+    
