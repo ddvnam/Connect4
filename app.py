@@ -4,26 +4,9 @@ import uvicorn
 from pydantic import BaseModel
 from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
-
-#-------------------------------------------
-from board import Board
 from solver import Solver
-from math import inf
-
-prev_board = None
-histories = []
-board = Board()
-
-def detect_played_col(prev_board : List[List[int]], current_board : List[List[int]]) -> Optional[int]:
-    if prev_board is None:
-        return None
-    
-    for col in range(len(current_board[0])):
-        for row in range(len(current_board)):
-            if prev_board[row][col] != current_board[row][col]:
-                return col
-#-------------------------------------------
-
+from board import Board
+import math
 
 app = FastAPI()
 
@@ -45,21 +28,15 @@ class AIResponse(BaseModel):
 
 @app.post("/api/connect4-move")
 async def make_move(game_state: GameState) -> AIResponse:
+    global solver
     try:
-        last_move = detect_played_col(prev_board, game_state.board)
-        if last_move is not None:
-            histories.append(last_move)
-            board.play(last_move)
-            prev_board = game_state.board
-        else:
-            board.set_board(histories)
-        f = open('test.txt', 'w')
-        f.write(str(board))
-        f.close()
-        #-----------------------------------------------------------
-        selected_move = 6
-        #-----------------------------------------------------------
-
+        if not game_state.valid_moves:
+            raise ValueError("Không có nước đi hợp lệ")
+        
+        bit_board =  Board.from_list(game_state.board)
+        solver = Solver(bit_board)
+        selected_move = solver.solve(depth=8, alpha=-math.inf, beta=math.inf, is_maximizer=True)[1]
+        
         return AIResponse(move=selected_move)
     except Exception as e:
         if game_state.valid_moves:

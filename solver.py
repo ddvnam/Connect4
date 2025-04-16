@@ -4,7 +4,7 @@ import pygame
 
 pygame.init()
 
-class Solver:  # Changed to PascalCase for class naming convention
+class Solver:  # Changed to PascalCase for class naming conventions
     def __init__(self, board: Board):
         self.board = board
         self.maximizer = board.get_current_player()

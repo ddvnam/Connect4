@@ -107,17 +107,44 @@ class Board:
     def is_full(self):
         return self.moves == self.w*self.h
     
-    def set_board(self, histories):
-        self.board_state = [0, 0]
-        self.col_heights = [(self.h + 1) * i for i in range(self.w)]
-        self.moves = 0
-        self.history = []
+    @staticmethod
+    def from_list(board_list):
+        """
+        Convert a list representation of Connect 4 board to a BitBoard object.
         
-        for move in histories:
-            self.play(move)
-            self.history.append(move)
-            self.moves += 1
-            self.col_heights[move] += 1
-
-
-    
+        Args:
+            board_list: A 2D list (height x width) representing the board state,
+                    where 0 = empty, 1 = player 0 (x), 2 = player 1 (o)
+        
+        Returns:
+            A new Board object initialized with the given state
+        """
+        height = len(board_list)
+        if height == 0:
+            return Board()
+        width = len(board_list[0])
+        
+        bitboard = Board(width, height)
+        
+        # Clear the initial empty state
+        bitboard.board_state = [0, 0]
+        bitboard.moves = 0
+        bitboard.history = []
+        bitboard.col_heights = [(height + 1) * i for i in range(width)]
+        
+        # We need to process the board from bottom to top (as in physical Connect 4)
+        for row in range(height):
+            for col in range(width):
+                player = board_list[height - 1 - row][col]  # height-1-row converts to bottom-up
+                if player == 1:  # Player 0
+                    bitboard.board_state[0] |= 1 << (bitboard.col_heights[col])
+                    bitboard.col_heights[col] += 1
+                    bitboard.moves += 1
+                    bitboard.history.append(col)
+                elif player == 2:  # Player 1
+                    bitboard.board_state[1] |= 1 << (bitboard.col_heights[col])
+                    bitboard.col_heights[col] += 1
+                    bitboard.moves += 1
+                    bitboard.history.append(col)
+        
+        return bitboard
