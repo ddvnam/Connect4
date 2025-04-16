@@ -1,5 +1,6 @@
 from math import inf
-from Board import Board
+from board import Board
+from tranposition_table import TranspositionTable
 import pygame
 
 pygame.init()
@@ -11,6 +12,23 @@ class Solver:  # Changed to PascalCase for class naming convention
         self.minimizer = board.get_opponent()
         self.node_count = 0
         self.pruning_count = 0
+        self.tranposition_table = TranspositionTable(2**20)  
+
+    def bitboard_to_grid(self, board: Board):
+        state = []
+        for i in range(self.board.h):                         # row
+            row = []
+            for j in range(self.board.w):                     # col
+                pos = 1 << (self.board.h + 1) * j + i
+                if self.board.board_state[0] & pos == pos:
+                    row.append(1)
+                elif self.board.board_state[1] & pos == pos:
+                    row.append(2)
+                else:
+                    row.append(0)
+            state.append(row)
+        state = state[::-1]
+        return state
 
     def evaluate(self) -> int:
         if self.board.winning_board_state():
@@ -19,162 +37,133 @@ class Solver:  # Changed to PascalCase for class naming convention
         grid = self.bitboard_to_grid(self.board)
         return self.score_position(grid, self.maximizer)
 
-    def causes_double_threat(self, col: int) -> bool:
-        """Check if playing this column creates two immediate winning threats."""
-        if not self.board.can_play(col):
-            return False
-            
-        self.board.play(col)
-        threats = 0
-        for next_col in self.board.get_available_moves():
-            if self.board.can_play(next_col):
-                self.board.play(next_col)
-                if self.board.winning_board_state():
-                    threats += 1
-                self.board.backtrack()
-                if threats >= 2:  # Early exit if we already found 2 threats
-                    break
-        self.board.backtrack()
-        return threats >= 2
-
-    def apply_strategic_rules(self, is_maximizer) -> int:
-        current_player = self.maximizer if is_maximizer else self.minimizer
-        opponent = self.minimizer if is_maximizer else self.maximizer
-
-        # Rule 1: Win immediately if possible
-        for col in self.board.get_available_moves():
-            if self.board.can_play(col):
-                self.board.play(col)
-                if self.board.winning_board_state() and self.board.get_current_player() == opponent:  # Check if we won
-                    self.board.backtrack()
-                    return col
-                self.board.backtrack()
-
-        # Rule 2: Block opponent's win
-        # Temporarily switch to opponent's perspective
-        original_player = self.board.get_current_player()
-        self.board.moves ^= 1
-        for col in self.board.get_available_moves():
-            if self.board.can_play(col):
-                self.board.play(col)
-                if self.board.winning_board_state():
-                    self.board.backtrack()
-                    self.board.moves = original_player  # Restore original player
-                    return col
-                self.board.backtrack()
-        self.board.moves = original_player  # Restore original player
-
-        # Rule 3: Block opponent's double threats
-        for col in self.board.get_available_moves():
-            if self.board.can_play(col) and self.causes_double_threat(col):
-                return col
-
-        return None
-
-    def bitboard_to_grid(self, board: Board):
-        grid = [[0 for _ in range(board.w)] for _ in range(board.h)]
-        for col in range(board.w):
-            for row in range(board.h):
-                pos = 1 << ((board.h + 1) * col + row)
-                if board.board_state[0] & pos:
-                    grid[row][col] = 1  # Quân của người chơi 1
-                elif board.board_state[1] & pos:
-                    grid[row][col] = 2  # Quân của người chơi 2
-        return grid[::-1]  # Đảo ngược hàng để hàng 0 là đáy bàn cờ
-
     def score_position(self, grid, player):
-        player += 1
-        opponent = 3 - player  # Assuming players are 1 and 2
-
+        ROWS = len(grid)
+        COLS = len(grid[0])
+        WINDOW_LENGTH = 4
+        EMPTY = 0
         score = 0
-        def evaluate_window(window):
-            player_count = window.count(player)
-            opponent_count = window.count(opponent)
-            empty_count = window.count(0)
+        player = player + 1
+        opponent = 3 - player  # Đối thủ là quân còn lại
 
-            # Terminal cases (win/loss)
-            if player_count == 4:
-                return 100000
-            if opponent_count == 4:
-                return -100000
+        def evaluate_window(window, player, row_pos=None):
+            score = 0
+            is_near_top = row_pos is not None and row_pos <= 2
 
-            window_score = 0
+            # Ưu tiên quân ta
+            if window.count(player) == 4:
+                score += 100
+            elif window.count(player) == 3 and window.count(EMPTY) == 1:
+                if is_near_top:
+                    score += 2  # giảm mạnh nếu gần top
+                else:
+                    score += 15
+            elif window.count(player) == 2 and window.count(EMPTY) == 2:
+                score += 5
 
-            # Player's opportunities
-            if player_count == 3 and empty_count == 1:
-                window_score += 100
-            elif player_count == 2 and empty_count == 2:
-                window_score += 10
-            elif player_count == 3 and empty_count == 2:
-                window_score += 50
+            # Phạt khi đối thủ có thế
+            if window.count(opponent) == 4:
+                score -= 100
+            elif window.count(opponent) == 3 and window.count(EMPTY) == 1:
+                score -= 80
+            elif window.count(opponent) == 2 and window.count(EMPTY) == 2:
+                score -= 10
 
-            # Opponent's threats
-            if opponent_count == 3 and empty_count == 1:
-                window_score -= 500
-            elif opponent_count == 2 and empty_count == 2:
-                window_score -= 20
-            elif opponent_count == 3 and empty_count == 2:
-                window_score -= 300
+            return score
 
-            return window_score
+        def count_double_threats(grid, player):
+            count = 0
+            for r in range(ROWS):
+                for c in range(COLS - 3):
+                    window = [grid[r][c + i] for i in range(4)]
+                    if window.count(player) == 3 and window.count(EMPTY) == 1:
+                        if r > 2:  # chỉ đếm nếu không gần top
+                            count += 1
 
-        # Center column priority
-        center_col = len(grid[0]) // 2
-        center_count = sum(1 for r in range(len(grid)) if grid[r][center_col] == player)
-        score += center_count * 3
+            for c in range(COLS):
+                for r in range(ROWS - 3):
+                    window = [grid[r + i][c] for i in range(4)]
+                    if window.count(player) == 3 and window.count(EMPTY) == 1:
+                        if r > 2:
+                            count += 1
 
-        # Window evaluation
-        rows, cols = len(grid), len(grid[0])
-        
-        # Horizontal
-        for r in range(rows):
-            for c in range(cols - 3):
-                window = (grid[r][c], grid[r][c+1], grid[r][c+2], grid[r][c+3])
-                score += evaluate_window(window)
-        
-        # Vertical
-        for c in range(cols):
-            for r in range(rows - 3):
-                window = (grid[r][c], grid[r+1][c], grid[r+2][c], grid[r+3][c])
-                score += evaluate_window(window)
-        
-        # Diagonal (positive slope)
-        for r in range(rows - 3):
-            for c in range(cols - 3):
-                window = (grid[r][c], grid[r+1][c+1], grid[r+2][c+2], grid[r+3][c+3])
-                score += evaluate_window(window)
-        
-        # Diagonal (negative slope)
-        for r in range(3, rows):
-            for c in range(cols - 3):
-                window = (grid[r][c], grid[r-1][c+1], grid[r-2][c+2], grid[r-3][c+3])
-                score += evaluate_window(window)
+            for r in range(ROWS - 3):
+                for c in range(COLS - 3):
+                    window = [grid[r + i][c + i] for i in range(4)]
+                    if window.count(player) == 3 and window.count(EMPTY) == 1:
+                        if r > 2:
+                            count += 1
+
+            for r in range(3, ROWS):
+                for c in range(COLS - 3):
+                    window = [grid[r - i][c + i] for i in range(4)]
+                    if window.count(player) == 3 and window.count(EMPTY) == 1:
+                        if r > 2:
+                            count += 1
+            return count
+
+        # Ưu tiên kiểm soát trung tâm
+        center_preference = [3, 2, 4, 1, 5]
+        for idx, col in enumerate(center_preference):
+            center_array = [grid[r][col] for r in range(ROWS)]
+            center_count = center_array.count(player)
+            score += center_count * (5 - idx)
+
+        # Duyệt hàng ngang
+        for r in range(ROWS):
+            row_array = grid[r]
+            for c in range(COLS - 3):
+                window = row_array[c:c + WINDOW_LENGTH]
+                score += evaluate_window(window, player, row_pos=r)
+
+        # Duyệt cột dọc
+        for c in range(COLS):
+            col_array = [grid[r][c] for r in range(ROWS)]
+            for r in range(ROWS - 3):
+                window = col_array[r:r + WINDOW_LENGTH]
+                score += evaluate_window(window, player, row_pos=r)
+
+        # Duyệt chéo /
+        for r in range(ROWS - 3):
+            for c in range(COLS - 3):
+                window = [grid[r + i][c + i] for i in range(WINDOW_LENGTH)]
+                score += evaluate_window(window, player, row_pos=r)
+
+        # Duyệt chéo \
+        for r in range(3, ROWS):
+            for c in range(COLS - 3):
+                window = [grid[r - i][c + i] for i in range(WINDOW_LENGTH)]
+                score += evaluate_window(window, player, row_pos=r)
+
+        # Thêm điểm nếu có double threats an toàn
+        threats = count_double_threats(grid, player)
+        if threats >= 2:
+            score += 50
 
         return score
+
 
     def solve(self, depth: int, alpha: int, beta: int, is_maximizer: bool) -> tuple:
         # Kiểm tra terminal node trước khi đếm node
         if depth == 0 or self.board.winning_board_state() or self.board.is_full():
             return self.evaluate(), None
-
         self.node_count += 1  # Chỉ đếm node khi thực sự duyệt
-
-        strategic_col = self.apply_strategic_rules(is_maximizer)
-        if strategic_col is not None and self.board.can_play(strategic_col):
-            self.board.play(strategic_col)
-            score = self.evaluate()
-            self.board.backtrack()
-            return score, strategic_col
 
         best_col = None
         eval_score = -inf if is_maximizer else inf
 
-        for col in self.board.get_available_moves():
+        for col in self.board.get_search_order():
             if not self.board.can_play(col):
                 continue
 
             self.board.play(col)
-            current_score, _ = self.solve(depth - 1, alpha, beta, not is_maximizer)
+            key = self.board.get_key()
+            tt_entry = self.tranposition_table.get(key)
+            current_score = None
+            if tt_entry is not None:
+                current_score = tt_entry
+            else:
+                current_score, _ = self.solve(depth - 1, alpha, beta, not is_maximizer)
             self.board.backtrack()
 
             if is_maximizer:
@@ -191,16 +180,16 @@ class Solver:  # Changed to PascalCase for class naming convention
             if beta <= alpha:
                 if hasattr(self, 'pruning_count'):
                     self.pruning_count += 1  # Chỉ tăng khi cắt tỉa
-                print(f"Pruning at depth {depth} for column {col} with alpha {alpha} and beta {beta} | Node count: {self.node_count}")
+                # print(f"Pruning at depth {depth} for column {col} with alpha {alpha} and beta {beta} | Node count: {self.node_count}")
             
                 break
-
+            self.tranposition_table.put(key, current_score)
         return eval_score, best_col
     
 def test():
     board = Board()
     solver_instance = Solver(board)  # Changed to match class name
-    depth = 8
+    depth = 10
     alpha = -inf
     beta = inf
     is_maximizer = True

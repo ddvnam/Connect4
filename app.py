@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # import AI
 from solver import solver
-from Board import Board
+from board import Board
 
 app = FastAPI()
 

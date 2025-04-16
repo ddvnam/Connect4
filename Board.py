@@ -1,5 +1,3 @@
-import copy
-
 class Board:
     ''' class to store and manipulate connect 4 game states '''
 
@@ -10,8 +8,9 @@ class Board:
         self.col_heights = [(height + 1) * i for i in range(width)]
         self.moves = 0
         self.history = []
-        self.bit_shifts = self.get_bit_shifts()
-
+        self.node_count = 0
+        self.bit_shifts = self.__get_bit_shifts()
+        self.base_search_order = self.__get_base_search_order()
 
     def __repr__(self):
         state = []
@@ -26,7 +25,7 @@ class Board:
                 else:
                     row_str += '. '
             state.append(row_str)
-        state.reverse()         
+        state.reverse()         # inverted orientation more readable
         return '\n'.join(state)
 
     def get_current_player(self):
@@ -37,14 +36,23 @@ class Board:
         ''' returns opponent to current player: 0 or 1 '''
         return (self.moves + 1) & 1
 
-    def get_available_moves(self):
-        available_moves = [col for col in range(self.w) if self.can_play(col)]
-        # Sort by: 1) Center priority, 2) Column height (higher = better)
-        return sorted(available_moves, key=lambda x: (abs(x - self.w // 2), -self.col_heights[x]))
+    def get_search_order(self):
+        ''' returns column search order containing playable columns only '''
+        col_order = filter(self.can_play, self.base_search_order)
+        return sorted(col_order, key=self.__col_sort, reverse=True)
 
     def get_mask(self):
         ''' returns bitstring of all occupied positions '''
         return self.board_state[0] | self.board_state[1]
+
+    # def get_key(self):
+    #     ''' returns unique game state identifier '''
+    #     return self.get_mask() + self.board_state[self.get_current_player()]
+
+    def get_key(self):
+        """Tạo key 56-bit cho TranspositionTable dựa trên trạng thái bàn cờ và lượt chơi."""
+        key = ((self.board_state[0] << 1) | self.board_state[1]) & ((1 << 56) - 1)
+        return key
 
     def can_play(self, col):
         ''' returns true if col (zero indexed) is playable '''
@@ -75,34 +83,39 @@ class Board:
                 return True
         return False
 
-    def is_full(self):
-        return self.moves == self.w * self.h
-    
     def get_score(self):
         ''' returns score of complete game (evaluated for winning opponent) '''
-        return - (self.w * self.h + 1 - self.moves) // 2
+        return (self.w * self.h + 1 - self.moves) // 2
 
-    def get_bit_shifts(self):
+    def __get_bit_shifts(self):
         return [
             1,              # | vertical
             self.h,         # \ diagonal
             self.h + 1,     # - horizontal
             self.h + 2      # / diagonal
         ]
+
+    def __get_base_search_order(self):
+        base_search_order = list(range(self.w))
+        base_search_order.sort(key=lambda x: abs(self.w // 2 - x))
+        return base_search_order
+
+    def __col_sort(self, col):
+        player = self.get_current_player()
+        move = 1 << self.col_heights[col]
+        count = 0
+        state = self.board_state[player] | move
+
+        for shift in self.bit_shifts:
+            test = state & (state >> shift) & (state >> 2 * shift)
+            if test:
+                count += bin(test).count('1')
+
+        return count
     
-    def write_bitboard_from_list(self, list_board):
-        """Converts a top-down 2D list to bitboard format (bottom-up)."""
-        self.board_state = [0, 0]
-        self.col_heights = [(self.h + 1) * i for i in range(self.w)]
-        self.moves = 0
-        self.history = []
-
-        for row in range(self.h):
-            for col in range(self.w):
-                cell = list_board[self.h - 1 - row][col]  # Flip the row index
-                if cell != 0:
-                    bit_pos = (self.h + 1) * col + row
-                    self.board_state[cell - 1] |= 1 << bit_pos
-                    self.col_heights[col] = max(self.col_heights[col], bit_pos + 1)
-                    self.moves += 1
-
+    def is_full(self):
+        return self.moves == self.w*self.h
+    
+        """Tạo key 56-bit cho TranspositionTable dựa trên trạng thái bàn cờ."""
+        key = (self.board_state[0] ^ self.board_state[1]) & ((1 << 56) - 1)
+        return key
