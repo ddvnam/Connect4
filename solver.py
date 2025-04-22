@@ -1,8 +1,5 @@
 from math import inf
 from board import Board
-import pygame
-
-pygame.init()
 
 class Solver:  # Changed to PascalCase for class naming conventions
     def __init__(self, board: Board):
@@ -176,72 +173,3 @@ class Solver:  # Changed to PascalCase for class naming conventions
                 break
 
         return eval_score, best_col
-    
-def test():
-    board = Board()
-    solver_instance = Solver(board)  # Changed to match class name
-    depth = 7
-    alpha = -inf
-    beta = inf
-    is_maximizer = True
-
-    while True:
-        print("AI is thinking...")
-        solver_instance.node_count = 0
-        start = pygame.time.get_ticks()
-        _, best_col = solver_instance.solve(depth, alpha, beta, is_maximizer)
-        print(f"Node count: {solver_instance.node_count}")
-        print(f'Time taken: {pygame.time.get_ticks() - start} ms')
-        print("-----------------------------------")
-
-        if best_col is not None and board.can_play(best_col):
-            board.play(best_col)
-            print(f"AI played column {best_col}")
-        else:
-            print("No valid move found!")
-            break
-
-        if board.winning_board_state():
-            print("AI wins!")
-            print(board)
-            break
-
-        if board.is_full():
-            print("It's a draw!")
-            break
-
-        print('Current board state:')
-        print(board)
-
-        while True:
-            user_input = input("Enter column to play (0-6): ")
-            if not user_input.isdigit():
-                print("Invalid input. Please enter a number between 0 and 6.")
-                continue
-
-            col = int(user_input)
-            if col < 0 or col >= board.w:
-                print("Invalid column. Please enter a number between 0 and 6.")
-                continue
-
-            if board.can_play(col):
-                board.play(col)
-                print(f"Played column {col}")
-                break
-            else:
-                print(f"Column {col} is not playable.")
-                continue
-
-        print('Current board state:')
-        print(board)
-
-        if board.winning_board_state():
-            print("You win!")
-            break
-
-        if board.is_full():
-            print("It's a draw!")
-            break
-
-if __name__ == "__main__":
-    test()
