@@ -36,7 +36,7 @@ async def make_move(game_state: GameState) -> AIResponse:
         
         bit_board =  Board.from_list(game_state.board)
         solver = Solver(bit_board)
-        selected_move = solver.solve(depth=6, alpha=-math.inf, beta=math.inf, is_maximizer=True)[1]
+        selected_move = solver.solve(depth=7, alpha=-math.inf, beta=math.inf, is_maximizer=True)[1]
         
         return AIResponse(move=selected_move)
     except Exception as e:
