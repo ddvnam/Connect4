@@ -22,6 +22,7 @@ class GameState(BaseModel):
     board: List[List[int]]
     current_player: int
     valid_moves: List[int]
+    is_new_game: bool
 
 class AIResponse(BaseModel):
     move: int
@@ -42,6 +43,11 @@ async def make_move(game_state: GameState) -> AIResponse:
         if game_state.valid_moves:
             return AIResponse(move=game_state.valid_moves[0])
         raise HTTPException(status_code=400, detail=str(e))
+    
+@app.get("/api/test")
+async def health_check():
+    return {"status": "ok", "message": "Server is running"}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8080)
