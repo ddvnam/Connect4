@@ -1,3 +1,0 @@
-LIBRARY solver_cython.cp312-win_amd64.pyd
-EXPORTS
-PyInit_solver_cython
