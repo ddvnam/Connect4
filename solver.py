@@ -1,5 +1,6 @@
 from math import inf
 from board import Board
+import time
 
 class Solver:  # Changed to PascalCase for class naming conventions
     def __init__(self, board: Board):
@@ -8,141 +9,68 @@ class Solver:  # Changed to PascalCase for class naming conventions
         self.minimizer = board.get_opponent()
         self.node_count = 0
         self.pruning_count = 0
-    
-    def bitboard_to_grid(self, board: Board):
-        state = []
-        for i in range(self.board.h):                         # row
-            row = []
-            for j in range(self.board.w):                     # col
-                pos = 1 << (self.board.h + 1) * j + i
-                if self.board.board_state[0] & pos == pos:
-                    row.append(1)
-                elif self.board.board_state[1] & pos == pos:
-                    row.append(2)
-                else:
-                    row.append(0)
-            state.append(row)
-        state = state[::-1]
-        return state
+
 
     def evaluate(self) -> int:
         if self.board.winning_board_state():
             return 1000000 if self.board.get_opponent() == self.maximizer else -1000000
 
-        grid = self.bitboard_to_grid(self.board)
-        return self.score_position(grid, self.maximizer)
+        return self.score_position(self.board)
 
-    def score_position(self, grid, player):
-        ROWS = len(grid)
-        COLS = len(grid[0])
-        WINDOW_LENGTH = 4
-        EMPTY = 0
+    def score_position(self, board: Board):
+        player_bb = board.board_state[self.maximizer]
+        opponent_bb = board.board_state[self.minimizer]
         score = 0
-        player = player + 1
-        opponent = 3 - player  # Đối thủ là quân còn lại
 
-        def evaluate_window(window, player, row_pos=None):
-            score = 0
-            is_near_top = row_pos is not None and row_pos <= 2
+        # Center column preference
+        center_column = 0b0001000 << (self.board.w // 2)  # Example for width=7
+        score += 3 * bin(player_bb & center_column).count('1')
+        score -= 3 * bin(opponent_bb & center_column).count('1')
 
-            # Ưu tiên quân ta
-            if window.count(player) == 4:
-                score += 100
-            elif window.count(player) == 3 and window.count(EMPTY) == 1:
-                if is_near_top:
-                    score += 2  # giảm mạnh nếu gần top
-                else:
-                    score += 15
-            elif window.count(player) == 2 and window.count(EMPTY) == 2:
-                score += 5
+        for shift in self.board.bit_shifts:
+            # 4 in a row (already handled by winning_board_state)
+            
+            # 3 in a row with open ends
+            player_3 = (player_bb & (player_bb >> shift) & (player_bb >> 2*shift))
+            opponent_3 = (opponent_bb & (opponent_bb >> shift) & (opponent_bb >> 2*shift))
+            
+            # Check if the 3 can be extended to 4 (open ends)
+            open_ends_mask = ~board.get_mask()
+            player_open_3 = bin((player_3 << (3*shift)) & open_ends_mask).count('1') + \
+                        bin((player_3 >> shift) & open_ends_mask).count('1')
+            score += 100 * player_open_3
+            
+            opponent_open_3 = bin((opponent_3 << (3*shift)) & open_ends_mask).count('1') + \
+                            bin((opponent_3 >> shift) & open_ends_mask).count('1')
+            score -= 80 * opponent_open_3
 
-            # Phạt khi đối thủ có thế
-            if window.count(opponent) == 4:
-                score -= 100
-            elif window.count(opponent) == 3 and window.count(EMPTY) == 1:
-                score -= 80
-            elif window.count(opponent) == 2 and window.count(EMPTY) == 2:
-                score -= 10
-
-            return score
-
-        def count_double_threats(grid, player):
-            count = 0
-            for r in range(ROWS):
-                for c in range(COLS - 3):
-                    window = [grid[r][c + i] for i in range(4)]
-                    if window.count(player) == 3 and window.count(EMPTY) == 1:
-                        if r > 2:  # chỉ đếm nếu không gần top
-                            count += 1
-
-            for c in range(COLS):
-                for r in range(ROWS - 3):
-                    window = [grid[r + i][c] for i in range(4)]
-                    if window.count(player) == 3 and window.count(EMPTY) == 1:
-                        if r > 2:
-                            count += 1
-
-            for r in range(ROWS - 3):
-                for c in range(COLS - 3):
-                    window = [grid[r + i][c + i] for i in range(4)]
-                    if window.count(player) == 3 and window.count(EMPTY) == 1:
-                        if r > 2:
-                            count += 1
-
-            for r in range(3, ROWS):
-                for c in range(COLS - 3):
-                    window = [grid[r - i][c + i] for i in range(4)]
-                    if window.count(player) == 3 and window.count(EMPTY) == 1:
-                        if r > 2:
-                            count += 1
-            return count
-
-        # Ưu tiên kiểm soát trung tâm
-        center_preference = [3, 2, 4, 1, 5]
-        for idx, col in enumerate(center_preference):
-            center_array = [grid[r][col] for r in range(ROWS)]
-            center_count = center_array.count(player)
-            score += center_count * (5 - idx)
-
-        # Duyệt hàng ngang
-        for r in range(ROWS):
-            row_array = grid[r]
-            for c in range(COLS - 3):
-                window = row_array[c:c + WINDOW_LENGTH]
-                score += evaluate_window(window, player, row_pos=r)
-
-        # Duyệt cột dọc
-        for c in range(COLS):
-            col_array = [grid[r][c] for r in range(ROWS)]
-            for r in range(ROWS - 3):
-                window = col_array[r:r + WINDOW_LENGTH]
-                score += evaluate_window(window, player, row_pos=r)
-
-        # Duyệt chéo /
-        for r in range(ROWS - 3):
-            for c in range(COLS - 3):
-                window = [grid[r + i][c + i] for i in range(WINDOW_LENGTH)]
-                score += evaluate_window(window, player, row_pos=r)
-
-        # Duyệt chéo \
-        for r in range(3, ROWS):
-            for c in range(COLS - 3):
-                window = [grid[r - i][c + i] for i in range(WINDOW_LENGTH)]
-                score += evaluate_window(window, player, row_pos=r)
-
-        # Thêm điểm nếu có double threats an toàn
-        threats = count_double_threats(grid, player)
-        if threats >= 2:
-            score += 50
+            # 2 in a row with open ends
+            player_2 = (player_bb & (player_bb >> shift))
+            opponent_2 = (opponent_bb & (opponent_bb >> shift))
+            
+            player_open_2 = bin((player_2 << (2*shift)) & open_ends_mask).count('1') + \
+                        bin((player_2 >> shift) & open_ends_mask).count('1')
+            score += 5 * player_open_2
+            
+            opponent_open_2 = bin((opponent_2 << (2*shift)) & open_ends_mask).count('1') + \
+                            bin((opponent_2 >> shift) & open_ends_mask).count('1')
+            score -= 10 * opponent_open_2
 
         return score
-
-
     def solve(self, depth: int, alpha: int, beta: int, is_maximizer: bool) -> tuple:
         # Kiểm tra terminal node trước khi đếm node
         if depth == 0 or self.board.winning_board_state() or self.board.is_full():
             return self.evaluate(), None
         self.node_count += 1  # Chỉ đếm node khi thực sự duyệt
+
+        # check instant win or loss
+        for col in range(self.board.w):
+            if self.board.can_play(col):
+                self.board.play(col)
+                if self.board.winning_board_state():
+                    self.board.backtrack()
+                    return (1000000, col) if is_maximizer else (-1000000, col)
+                self.board.backtrack()
 
         best_col = None
         eval_score = -inf if is_maximizer else inf
@@ -173,3 +101,70 @@ class Solver:  # Changed to PascalCase for class naming conventions
                 break
 
         return eval_score, best_col
+    
+# def test():
+#     board = Board()
+#     solver_instance = Solver(board)  # Changed to match class name
+#     depth = 10
+#     alpha = -inf
+#     beta = inf
+#     is_maximizer = True
+
+#     while True:
+#         print("AI is thinking...")
+#         solver_instance.node_count = 0
+#         start = time.time()
+#         _, best_col = solver_instance.solve(depth, alpha, beta, is_maximizer)
+#         print(f"Node count: {solver_instance.node_count}")
+#         end_time = time.time()
+#         print(f'Time taken: {end_time - start} ms')
+#         print("-----------------------------------")
+
+#         if best_col is not None and board.can_play(best_col):
+#             board.play(best_col)
+#             print(f"AI played column {best_col}")
+#         else:
+#             print("No valid move found!")
+#             break
+
+#         if board.winning_board_state():
+#             print("AI wins!")
+#             print(board)
+#             break
+
+#         if board.is_full():
+#             print("It's a draw!")
+#             break
+
+#         print('Current board state:')
+#         print(board)
+
+#         while True:
+#              # Get user input and ensure it's a string
+#             user_input = int(input("Enter column (0-6): "))
+#             col = int(user_input)
+#             if col < 0 or col >= board.w:
+#                 print("Invalid column. Please enter a number between 0 and 6.")
+#                 continue
+
+#             if board.can_play(col):
+#                 board.play(col)
+#                 print(f"Played column {col}")
+#                 break
+#             else:
+#                 print(f"Column {col} is not playable.")
+#                 continue
+
+#         print('Current board state:')
+#         print(board)
+
+#         if board.winning_board_state():
+#             print("You win!")
+#             break
+
+#         if board.is_full():
+#             print("It's a draw!")
+#             break
+
+# if __name__ == "__main__":
+#     test()
