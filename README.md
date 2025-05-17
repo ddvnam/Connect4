@@ -67,8 +67,7 @@ The evaluation function assesses non-terminal board states based on:
  
 ## Prerequisites
 - Python 3.8 or higher
-- Required libraries: `numpy` (for bitboard operations, if applicable)
-
+  
 ## Installation
 1. Clone the repository:
    ```bash
