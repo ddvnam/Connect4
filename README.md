@@ -24,7 +24,9 @@ The goal of this project is to design and implement an AI capable of:
   - `0`: Empty cell
   - `1`: Player 1's disc (Red)
   - `2`: Player 2's disc (Yellow)
-- **Bitboard Optimization**: To enhance performance, the board is also represented using two 64-bit integers (one for each player). Each bit indicates whether a position is occupied (1) or not (0). A 7x7 grid is used, with the extra row reserved for technical purposes.
+    
+  ![image](https://github.com/user-attachments/assets/e05e77a5-701b-412f-b4d0-5044e6752699)
+  ###### Figure1: Visual Representation of the Gridboard Game State
 
 ### 2. Minimax Algorithm
 The core decision-making algorithm is **Minimax**, which assumes both players play optimally:
@@ -32,6 +34,9 @@ The core decision-making algorithm is **Minimax**, which assumes both players pl
 - The opponent (Minimizer) aims to minimize the AI's score.
 - The algorithm explores the game tree recursively up to a predefined depth and evaluates leaf nodes using an evaluation function.
 
+![image](https://github.com/user-attachments/assets/adfaa9b9-484e-48c8-bb64-fa882b1699b3)
+  ###### Figure 2: Representation of the Minimax Game Tree Leading to a Win State
+  
 ### 3. Alpha-Beta Pruning
 To optimize Minimax, **Alpha-Beta pruning** is applied:
 - Maintains `alpha` (best score for Max) and `beta` (best score for Min).
@@ -48,7 +53,18 @@ The evaluation function assesses non-terminal board states based on:
 ### 5. Performance Optimization
 - **Move Ordering**: Prioritizing central columns enhances Alpha-Beta pruning efficiency.
 - **Bitboard Operations**: Uses bitwise operations for fast board state manipulation and evaluation, leveraging hardware-level speed.
+  - The board is also represented using two 64-bit integers to enhance performance.
 
+![image](https://github.com/user-attachments/assets/c0582b0f-8b71-4f42-8b68-4b303c2ce862)
+
+  ###### Figure 3: Representation of the bitboard
+
+  - When we encode the gridboard as a 64-bit number, each player is represented by a separate number. Each number indicates that player's board state, where a 1 means the player occupies the bit position, and a 0 means the player hasn't played in that position. To obtain the overall board state showing all occupied positions, we apply a bitwise OR operation to the two players' board states.
+
+    ![image](https://github.com/user-attachments/assets/162311cf-cfd0-437f-80f9-e9bc4d8ada2b)
+
+ ###### Figure 4: Encoding of Two Players' Bitboard States
+ 
 ## Prerequisites
 - Python 3.8 or higher
 - Required libraries: `numpy` (for bitboard operations, if applicable)
